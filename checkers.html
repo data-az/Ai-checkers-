@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Шашки: боты на максималках</title>
+<style>
+  :root {
+    --light: #f0d9b5;
+    --dark: #b58863;
+    --board-border: #5a3a1e;
+    --accent: #e8b230;
+    --bg: #1e1b18;
+    --text: #f4ece1;
+    --muted: #a89a88;
+    --w: #fafafa;
+    --b: #222;
+    --hl: rgba(232, 178, 48, 0.55);
+    --move: rgba(80, 200, 120, 0.55);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    min-height: 100%;
+  }
+  body { display: flex; flex-direction: column; align-items: center; padding: 10px; gap: 10px; }
+  h1 { font-size: 20px; margin: 4px 0 0; font-weight: 600; }
+  .panel {
+    width: min(96vw, 520px); display: grid; grid-template-columns: 1fr 1fr;
+    gap: 8px; font-size: 14px;
+  }
+  .side {
+    background: #2b2622; border-radius: 10px; padding: 8px 10px;
+    border: 2px solid transparent;
+  }
+  .side.active { border-color: var(--accent); }
+  .side .name { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .chip { width: 14px; height: 14px; border-radius: 50%; display: inline-block; border: 1px solid #000; }
+  .chip.w { background: var(--w); }
+  .chip.b { background: var(--b); }
+  .side label { display: block; color: var(--muted); font-size: 12px; margin-top: 6px; }
+  select, input[type=range] { width: 100%; margin-top: 2px; }
+  select {
+    background: #1a1714; color: var(--text); border: 1px solid #4a4038;
+    border-radius: 6px; padding: 4px; font-size: 13px;
+  }
+  #boardWrap {
+    width: min(96vw, 520px); aspect-ratio: 1 / 1; position: relative;
+    border: 10px solid var(--board-border); border-radius: 6px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+  }
+  #board {
+    width: 100%; height: 100%; display: grid;
+    grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr);
+  }
+  .sq { position: relative; display: flex; align-items: center; justify-content: center; }
+  .sq.light { background: var(--light); }
+  .sq.dark { background: var(--dark); }
+  .sq.last-from::after, .sq.last-to::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+  }
+  .sq.last-from::after { background: var(--hl); }
+  .sq.last-to::after { background: var(--move); }
+  .piece {
+    width: 78%; height: 78%; border-radius: 50%;
+    position: relative; z-index: 1;
+    box-shadow: 0 3px 5px rgba(0,0,0,0.45), inset 0 -4px 0 rgba(0,0,0,0.15);
+    transition: transform 0.18s ease;
+  }
+  .piece.w { background: radial-gradient(circle at 35% 30%, #fff, #d8d8d8); border: 1px solid #aaa; }
+  .piece.b { background: radial-gradient(circle at 35% 30%, #555, #111); border: 1px solid #000; }
+  .piece.king::after {
+    content: "♛"; position: absolute; inset: 0; display: flex;
+    align-items: center; justify-content: center; font-size: 26px;
+    color: var(--accent); text-shadow: 0 1px 2px #000;
+  }
+  .piece.w.king::after { color: #b8860b; }
+  .piece.sel { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .target::before {
+    content: ""; position: absolute; width: 26%; height: 26%; border-radius: 50%;
+    background: rgba(40, 160, 90, 0.85); z-index: 2;
+  }
+  .coord {
+    position: absolute; font-size: 10px; color: rgba(0,0,0,0.45); z-index: 3; pointer-events: none;
+  }
+  .coord.file { right: 2px; bottom: 0; }
+  .coord.rank { left: 2px; top: 0; }
+  .controls {
+    width: min(96vw, 520px); display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+  }
+  button {
+    flex: 1 1 120px; padding: 10px 12px; border: none; border-radius: 8px;
+    background: var(--accent); color: #1a1408; font-weight: 600; font-size: 15px;
+    cursor: pointer;
+  }
+  button.secondary { background: #3a322b; color: var(--text); }
+  button:disabled { opacity: 0.45; }
+  #status {
+    width: min(96vw, 520px); min-height: 40px; text-align: center; font-size: 15px;
+    background: #2b2622; border-radius: 8px; padding: 8px; color: var(--text);
+  }
+  #log {
+    width: min(96vw, 520px); height: 110px; overflow-y: auto; font-family: ui-monospace, Menlo, monospace;
+    font-size: 12px; background: #15120f; border-radius: 8px; padding: 6px 8px; color: var(--muted);
+    line-height: 1.4;
+  }
+  #log .w { color: #e6e0d4; }
+  #log .b { color: #9a9a9a; }
+  .speed { width: min(96vw, 520px); font-size: 13px; color: var(--muted); }
+  .speed input { width: 100%; }
+  .score { width: min(96vw, 520px); display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<h1>Шашки: боты на максималках</h1>
+
+<div class="panel">
+  <div class="side" id="sideW">
+    <div class="name"><span class="chip w"></span> Белые</div>
+    <label>Уровень (глубина поиска)
+      <select id="depthW">
+        <option value="4">4 — лёгкий</option>
+        <option value="6" selected>6 — средний</option>
+        <option value="8">8 — сильный</option>
+        <option value="10">10 — максимум</option>
+        <option value="12">12 — очень долго</option>
+      </select>
+    </label>
+  </div>
+  <div class="side" id="sideB">
+    <div class="name"><span class="chip b"></span> Чёрные</div>
+    <label>Уровень (глубина поиска)
+      <select id="depthB">
+        <option value="4">4 — лёгкий</option>
+        <option value="6">6 — средний</option>
+        <option value="8" selected>8 — сильный</option>
+        <option value="10">10 — максимум</option>
+        <option value="12">12 — очень долго</option>
+      </select>
+    </label>
+  </div>
+</div>
+
+<div id="boardWrap"><div id="board"></div></div>
+
+<div class="score">
+  <span>Белые: <b id="cntW">12</b></span>
+  <span>Ход: <b id="moveNo">0</b></span>
+  <span>Чёрные: <b id="cntB">12</b></span>
+</div>
+
+<div id="status">Нажмите «Старт»</div>
+
+<div class="speed">
+  Пауза между ходами: <span id="speedVal">600</span> мс
+  <input type="range" id="speed" min="0" max="2000" step="50" value="600">
+</div>
+
+<div class="controls">
+  <button id="startBtn">Старт</button>
+  <button id="pauseBtn" class="secondary" disabled>Пауза</button>
+  <button id="newBtn" class="secondary">Новая партия</button>
+</div>
+
+<div id="log"></div>
+
+<script>
+(() => {
+  // ---------- Константы ----------
+  const N = 8;
+  const EMPTY = 0, W = 1, B = 2;
+  const WK = 3, BK = 4;           // дамки
+  const INF = 1e9;
+
+  const color = p => (p === W || p === WK) ? W : (p === B || p === BK) ? B : 0;
+  const isKing = p => p === WK || p === BK;
+  const opp = c => c === W ? B : W;
+
+  // Индексация: клетки 0..63, row*8+col. Тёмные клетки — (row+col) % 2 === 1
+  // Белые стоят внизу (rows 5..7), двигаются вверх (row уменьшается)
+  const inside = (r, c) => r >= 0 && r < N && c >= 0 && c < N;
+
+  // ---------- Состояние ----------
+  function initialBoard() {
+    const b = new Array(64).fill(EMPTY);
+    for (let r = 0; r < 3; r++)
+      for (let c = 0; c < N; c++)
+        if ((r + c) % 2 === 1) b[r * 8 + c] = B;
+    for (let r = 5; r < N; r++)
+      for (let c = 0; c < N; c++)
+        if ((r + c) % 2 === 1) b[r * 8 + c] = W;
+    return b;
+  }
+
+  // ---------- Генерация ходов ----------
+  // Ход: {from, to, captures:[idx...], path:[...] }, captures для дамок могут быть дальними
+  // Возвращает список ходов с учётом обязательного боя (если есть взятие — только взятия)
+
+  function genMoves(board, side) {
+    const captures = [];
+    const simple = [];
+    for (let i = 0; i < 64; i++) {
+      const p = board[i];
+      if (color(p) !== side) continue;
+      const r = (i / 8) | 0, c = i % 8;
+      if (isKing(p)) {
+        genKingCaptures(board, side, i, r, c, [], captures);
+        genKingSimple(board, i, r, c, simple);
+      } else {
+        genManCaptures(board, side, i, r, c, [], captures);
+        genManSimple(board, side, i, r, c, simple);
+      }
+    }
+    if (captures.length) return captures;
+    return simple;
+  }
+
+  // Простой ход пешки
+  function genManSimple(board, side, i, r, c, out) {
+    const dr = side === W ? -1 : 1;
+    for (const dc of [-1, 1]) {
+      const nr = r + dr, nc = c + dc;
+      if (!inside(nr, nc)) continue;
+      const j = nr * 8 + nc;
+      if (board[j] === EMPTY) out.push({ from: i, to: j, caps: [] });
+    }
+  }
+
+  // Простой ход дамки — по диагонали на любое расстояние
+  function genKingSimple(board, i, r, c, out) {
+    for (const [dr, dc] of [[1,1],[1,-1],[-1,1],[-1,-1]]) {
+      let nr = r + dr, nc = c + dc;
+      while (inside(nr, nc) && board[nr * 8 + nc] === EMPTY) {
+        out.push({ from: i, to: nr * 8 + nc, caps: [] });
+        nr += dr; nc += dc;
+      }
+    }
+  }
+
+  // Взятия пешки (с цепочками). board — рабочая копия, на ней временно удаляются взятые
+  function genManCaptures(board, side, from, r, c, caps, out) {
+    let found = false;
+    for (const [dr, dc] of [[1,1],[1,-1],[-1,1],[-1,-1]]) {
+      const mr = r + dr, mc = c + dc;
+      const lr = r + 2 * dr, lc = c + 2 * dc;
+      if (!inside(lr, lc)) continue;
+      const mi = mr * 8 + mc, li = lr * 8 + lc;
+      const mp = board[mi];
+      if (color(mp) !== opp(side) || caps.includes(mi)) continue;
+      if (board[li] !== EMPTY && !(li === from)) continue;
+      found = true;
+      const newCaps = caps.concat([mi]);
+      // продолжаем цепочку
+      const saved = board[mi];
+      board[mi] = EMPTY;
+      const before = out.length;
+      genManCaptures(board, side, from, lr, lc, newCaps, out);
+      board[mi] = saved;
+      if (out.length === before) {
+        out.push({ from, to: li, caps: newCaps });
+      }
+    }
+    return found;
+  }
+
+  // Взятия дамки (дальние). Проверяем: путь до первой фигуры, за ней пустые клетки
+  function genKingCaptures(board, side, from, r, c, caps, out) {
+    for (const [dr, dc] of [[1,1],[1,-1],[-1,1],[-1,-1]]) {
+      let nr = r + dr, nc = c + dc;
+      // пустые клетки
+      while (inside(nr, nc) && board[nr * 8 + nc] === EMPTY) { nr += dr; nc += dc; }
+      if (!inside(nr, nc)) continue;
+      const mi = nr * 8 + nc;
+      const mp = board[mi];
+      if (color(mp) !== opp(side) || caps.includes(mi)) continue;
+      // клетки за фигурой
+      let lr = nr + dr, lc = nc + dc;
+      const landings = [];
+      while (inside(lr, lc) && (board[lr * 8 + lc] === EMPTY || lr * 8 + lc === from)) {
+        landings.push([lr, lc]); lr += dr; lc += dc;
+      }
+      if (!landings.length) continue;
+      const newCaps = caps.concat([mi]);
+      const saved = board[mi];
+      board[mi] = EMPTY;
+      const before = out.length;
+      for (const [er, ec] of landings) {
+        // продолжение цепочки с этой позиции
+        const sub = [];
+        genKingCaptures(board, side, from, er, ec, newCaps, sub);
+        if (sub.length) {
+          for (const s of sub) out.push(s);
+        }
+      }
+      board[mi] = saved;
+      if (out.length === before) {
+        // конец цепочки — последняя клетка приземления любая из landings
+        for (const [er, ec] of landings) {
+          out.push({ from, to: er * 8 + ec, caps: newCaps });
+        }
+      }
+    }
+  }
+
+  // Применение хода к копии доски
+  function applyMove(board, m, side) {
+    const nb = board.slice();
+    const p = nb[m.from];
+    nb[m.from] = EMPTY;
+    for (const ci of m.caps) nb[ci] = EMPTY;
+    let np = p;
+    const tr = (m.to / 8) | 0;
+    if (p === W && tr === 0) np = WK;
+    if (p === B && tr === N - 1) np = BK;
+    nb[m.to] = np;
+    return nb;
+  }
+
+  // ---------- Оценка позиции ----------
+  // Простые веса + бонус за дамки и продвижение + центр
+  const PST_CENTER = [
+    0,0,0,0,0,0,0,0,
+    0,1,1,1,1,1,1,0,
+    0,1,2,2,2,2,1,0,
+    0,1,2,3,3,2,1,0,
+    0,1,2,3,3,2,1,0,
+    0,1,2,2,2,2,1,0,
+    0,1,1,1,1,1,1,0,
+    0,0,0,0,0,0,0,0
+  ];
+
+  function evaluate(board) {
+    let score = 0;
+    for (let i = 0; i < 64; i++) {
+      const p = board[i];
+      if (!p) continue;
+      const r = (i / 8) | 0;
+      const c = i % 8;
+      const center = PST_CENTER[i];
+      if (p === W) {
+        score += 100 + (7 - r) * 4 + center;
+      } else if (p === B) {
+        score -= 100 + r * 4 + center;
+      } else if (p === WK) {
+        score += 260 + center * 2;
+      } else if (p === BK) {
+        score -= 260 + center * 2;
+      }
+    }
+    return score; // положительное — выгодно белым
+  }
+
+  // ---------- Минимакс с альфа-бета ----------
+  // Оценка с точки зрения side (для max), eval выражается через белых
+  let nodesCount = 0;
+  let deadline = 0;
+  let timedOut = false;
+
+  function search(board, side, depth, alpha, beta, ply) {
+    nodesCount++;
+    if ((nodesCount & 1023) === 0 && performance.now() > deadline) {
+      timedOut = true;
+    }
+    if (timedOut) return evaluate(board);
+
+    const moves = genMoves(board, side);
+    if (moves.length === 0) {
+      // проигрыш стороны на ходу
+      return side === W ? -INF + ply : INF - ply;
+    }
+    if (depth === 0) return evaluate(board);
+
+    const maximizing = side === W;
+    let best = maximizing ? -INF : INF;
+
+    // упорядочивание: взятия и дамки сначала
+    moves.sort((a, b) => (b.caps.length - a.caps.length));
+
+    for (const m of moves) {
+      const nb = applyMove(board, m, side);
+      const v = search(nb, opp(side), depth - 1, alpha, beta, ply + 1);
+      if (maximizing) {
+        if (v > best) best = v;
+        if (best > alpha) alpha = best;
+      } else {
+        if (v < best) best = v;
+        if (best < beta) beta = best;
+      }
+      if (beta <= alpha) break;
+      if (timedOut) break;
+    }
+    return best;
+  }
+
+  // Лучший ход с итеративным углублением до depth или времени
+  function bestMove(board, side, maxDepth, timeLimitMs) {
+    nodesCount = 0;
+    timedOut = false;
+    deadline = performance.now() + timeLimitMs;
+    const rootMoves = genMoves(board, side);
+    if (rootMoves.length === 0) return null;
+    if (rootMoves.length === 1) return rootMoves[0];
+
+    let bestM = rootMoves[0];
+    let lastGood = rootMoves[0];
+
+    for (let d = 1; d <= maxDepth; d++) {
+      let localBest = null;
+      let localScore = side === W ? -INF : INF;
+      let alpha = -INF, beta = INF;
+      const ordered = rootMoves.slice().sort((a, b) => b.caps.length - a.caps.length);
+      let completed = true;
+      for (const m of ordered) {
+        const nb = applyMove(board, m, side);
+        const v = search(nb, opp(side), d - 1, alpha, beta, 1);
+        if (timedOut) { completed = false; break; }
+        if (side === W) {
+          if (v > localScore) { localScore = v; localBest = m; }
+          if (localScore > alpha) alpha = localScore;
+        } else {
+          if (v < localScore) { localScore = v; localBest = m; }
+          if (localScore < beta) beta = localScore;
+        }
+      }
+      if (!completed) break;
+      bestM = localBest;
+      lastGood = localBest;
+      if (Math.abs(localScore) > INF / 2) break; // найдено гарантированное решение
+    }
+    return bestM || lastGood;
+  }
+
+  // ---------- Интерфейс ----------
+  const boardEl = document.getElementById('board');
+  const statusEl = document.getElementById('status');
+  const logEl = document.getElementById('log');
+  const startBtn = document.getElementById('startBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const newBtn = document.getElementById('newBtn');
+  const speedEl = document.getElementById('speed');
+  const speedVal = document.getElementById('speedVal');
+  const depthW = document.getElementById('depthW');
+  const depthB = document.getElementById('depthB');
+  const sideW = document.getElementById('sideW');
+  const sideB = document.getElementById('sideB');
+  const cntW = document.getElementById('cntW');
+  const cntB = document.getElementById('cntB');
+  const moveNoEl = document.getElementById('moveNo');
+
+  let board = initialBoard();
+  let turn = W;
+  let moveNo = 0;
+  let running = false;
+  let timer = null;
+  let lastMove = null;
+  let gameOver = false;
+
+  const cellName = i => 'abcdefgh'[i % 8] + (8 - ((i / 8) | 0));
+
+  function renderBoard() {
+    boardEl.innerHTML = '';
+    for (let r = 0; r < N; r++) {
+      for (let c = 0; c < N; c++) {
+        const i = r * 8 + c;
+        const dark = (r + c) % 2 === 1;
+        const sq = document.createElement('div');
+        sq.className = 'sq ' + (dark ? 'dark' : 'light');
+        if (lastMove) {
+          if (i === lastMove.from) sq.classList.add('last-from');
+          if (i === lastMove.to) sq.classList.add('last-to');
+        }
+        if (c === 0) {
+          const rk = document.createElement('span');
+          rk.className = 'coord rank';
+          rk.textContent = 8 - r;
+          sq.appendChild(rk);
+        }
+        if (r === N - 1) {
+          const fl = document.createElement('span');
+          fl.className = 'coord file';
+          fl.textContent = 'abcdefgh'[c];
+          sq.appendChild(fl);
+        }
+        const p = board[i];
+        if (p) {
+          const piece = document.createElement('div');
+          piece.className = 'piece ' + (color(p) === W ? 'w' : 'b') + (isKing(p) ? ' king' : '');
+          sq.appendChild(piece);
+        }
+        boardEl.appendChild(sq);
+      }
+    }
+    const cw = board.filter(p => color(p) === W).length;
+    const cb = board.filter(p => color(p) === B).length;
+    cntW.textContent = cw;
+    cntB.textContent = cb;
+    moveNoEl.textContent = moveNo;
+    sideW.classList.toggle('active', running && turn === W && !gameOver);
+    sideB.classList.toggle('active', running && turn === B && !gameOver);
+  }
+
+  function log(text, side) {
+    const d = document.createElement('div');
+    d.className = side === W ? 'w' : 'b';
+    d.textContent = text;
+    logEl.appendChild(d);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function moveText(m) {
+    const sep = m.caps.length ? ':' : '-';
+    return cellName(m.from) + sep + cellName(m.to) + (m.caps.length ? ' (x' + m.caps.length + ')' : '');
+  }
+
+  function setStatus(t) { statusEl.textContent = t; }
+
+  function checkEnd() {
+    const moves = genMoves(board, turn);
+    if (moves.length === 0) {
+      gameOver = true;
+      running = false;
+      const winner = turn === W ? 'Чёрные' : 'Белые';
+      setStatus('Конец партии: побеждают ' + winner.toLowerCase() + '!');
+      log('Партия окончена. Победа: ' + winner, turn === W ? B : W);
+      startBtn.disabled = true;
+      pauseBtn.disabled = true;
+      return true;
+    }
+    return false;
+  }
+
+  function step() {
+    if (!running || gameOver) return;
+    const depth = turn === W ? parseInt(depthW.value, 10) : parseInt(depthB.value, 10);
+    setStatus((turn === W ? 'Белые' : 'Чёрные') + ' думают (глубина ' + depth + ')...');
+    renderBoard();
+
+    // Даём браузеру отрисовать статус перед тяжёлым расчётом
+    setTimeout(() => {
+      if (!running || gameOver) return;
+      const limit = Math.max(300, parseInt(speedEl.value, 10) * 6 + 1500);
+      const m = bestMove(board, turn, depth, limit);
+      if (!m) { checkEnd(); return; }
+
+      board = applyMove(board, m, turn);
+      lastMove = m;
+      moveNo++;
+      log(moveNo + '. ' + moveText(m), turn);
+      turn = opp(turn);
+      renderBoard();
+
+      if (checkEnd()) return;
+
+      const wait = parseInt(speedEl.value, 10);
+      setStatus('Ход ' + (turn === W ? 'белых' : 'чёрных') + '...');
+      timer = setTimeout(step, wait);
+    }, 30);
+  }
+
+  function start() {
+    if (gameOver) return;
+    running = true;
+    startBtn.disabled = true;
+    pauseBtn.disabled = false;
+    step();
+  }
+
+  function pause() {
+    running = false;
+    clearTimeout(timer);
+    startBtn.disabled = false;
+    pauseBtn.disabled = true;
+    setStatus('Пауза');
+    renderBoard();
+  }
+
+  function newGame() {
+    clearTimeout(timer);
+    board = initialBoard();
+    turn = W;
+    moveNo = 0;
+    running = false;
+    gameOver = false;
+    lastMove = null;
+    logEl.innerHTML = '';
+    startBtn.disabled = false;
+    pauseBtn.disabled = true;
+    setStatus('Нажмите «Старт»');
+    renderBoard();
+  }
+
+  speedEl.addEventListener('input', () => { speedVal.textContent = speedEl.value; });
+  startBtn.addEventListener('click', start);
+  pauseBtn.addEventListener('click', pause);
+  newBtn.addEventListener('click', newGame);
+
+  renderBoard();
+})();
+</script>
+</body>
+</html>
